@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import FoodRecommendations from "./components/FoodRecommendations";
+import { searchLandmarks } from "./services/openai";
 
 // --- Mock data ---
 const landmarks = [
@@ -135,12 +136,16 @@ function Navigation({ activePage, onNavigate }) {
   );
 }
 
-function TourGuide({ onMessage, tourIds }) {
+function TourGuide({ onMessage, tourIds, isLoading }) {
   return (
     <div className="tour-guide">
       <h1>Barcelona AI Tour Guide</h1>
       <ChatBox onMessage={onMessage} />
-      <TourList suggested={tourIds} />
+      {isLoading ? (
+        <div className="loading">Loading suggested landmarks...</div>
+      ) : (
+        <TourList suggested={tourIds} />
+      )}
       <EventList />
     </div>
   );
@@ -150,34 +155,53 @@ function TourGuide({ onMessage, tourIds }) {
 export default function App() {
   const [tourIds, setTourIds] = useState([]);
   const [activePage, setActivePage] = useState('tour');
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Simulated AI: picks a "tour" based on simple keyword matching
-  function handleMessage(input, setHistory, history) {
-    const text = input.toLowerCase();
-    let reply = "";
-    if (text.includes("gaudi") || text.includes("famous")) {
-      setTourIds([1, 2]);
-      reply = "Great choice! You should visit Sagrada Família and Parc Güell.";
-    } else if (text.includes("main street") || text.includes("rambla")) {
-      setTourIds([3]);
-      reply = "You'd love La Rambla! It's lively at any hour.";
-    } else if (text.includes("suggest tour") || text.includes("walking tour")) {
-      setTourIds([1, 2, 3]);
-      reply = "Here's a classic Barcelona walking tour: Sagrada Família, Parc Güell, and La Rambla!";
-    } else if (text.includes("food") || text.includes("eat") || text.includes("restaurant")) {
-      setActivePage('food');
-      reply = "I've switched you to our Food Guide! You can ask about restaurants, local dishes, and more.";
-    } else {
-      reply = "Ask me for a walking tour or about a specific landmark (e.g., 'Tell me about Gaudí sites'). You can also ask about food!";
+  // Updated to use OpenAI API
+  async function handleMessage(input, setHistory, history) {
+    try {
+      setIsLoading(true);
+      const text = input.toLowerCase();
+      
+      // Switch to food guide if requested
+      if (text.includes("food") || text.includes("eat") || text.includes("restaurant")) {
+        setActivePage('food');
+        setHistory([...history, { 
+          sender: "ai", 
+          text: "I've switched you to our Food Guide! You can ask about restaurants, local dishes, and more." 
+        }]);
+        return;
+      }
+
+      // Get AI response
+      const aiResponse = await searchLandmarks(input);
+      
+      // Set suggested landmarks based on response content
+      if (text.includes("gaudi") || text.includes("sagrada") || text.includes("güell")) {
+        setTourIds([1, 2]);
+      } else if (text.includes("rambla")) {
+        setTourIds([3]);
+      } else if (text.includes("all") || text.includes("everything") || text.includes("tour")) {
+        setTourIds([1, 2, 3]);
+      }
+
+      setHistory([...history, { sender: "ai", text: aiResponse }]);
+    } catch (error) {
+      setHistory([...history, { 
+        sender: "ai", 
+        text: "I apologize, but I encountered an error. Please make sure your OpenAI API key is correctly set up." 
+      }]);
+      console.error('Error:', error);
+    } finally {
+      setIsLoading(false);
     }
-    setHistory([...history, { sender: "ai", text: reply }]);
   }
 
   return (
     <div className="app-container">
       <Navigation activePage={activePage} onNavigate={setActivePage} />
       {activePage === 'tour' ? (
-        <TourGuide onMessage={handleMessage} tourIds={tourIds} />
+        <TourGuide onMessage={handleMessage} tourIds={tourIds} isLoading={isLoading} />
       ) : (
         <FoodRecommendations />
       )}
@@ -421,6 +445,14 @@ export default function App() {
 
         ::-webkit-scrollbar-thumb:hover {
           background: #a9b9cc;
+        }
+
+        .loading {
+          text-align: center;
+          padding: 20px;
+          background: #f8fafc;
+          border-radius: 12px;
+          margin-bottom: 32px;
         }
       `}</style>
     </div>
